@@ -1810,7 +1810,10 @@ impl Client {
             check_generation!();
 
             let flag_set = client_clone.needs_initial_full_sync.load(Ordering::Relaxed);
-            let needs_initial_sync = flag_set || needs_pushname_from_sync;
+
+            // Skip WhatsApp app-state sync entirely to avoid sync storm runs.
+            let _ = (flag_set, needs_pushname_from_sync);
+            let needs_initial_sync = false;
 
             if needs_initial_sync {
                 // === Fresh pairing path ===
