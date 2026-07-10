@@ -80,6 +80,8 @@ impl NoiseSocket {
         let mut write_counter: u32 = 0;
 
         while let Ok(job) = send_job_rx.recv().await {
+            let plaintext_len = job.plaintext_buf.len();
+            log::debug!("noise: sender task processing job ({plaintext_len} bytes)");
             let result = Self::process_send_job(
                 &runtime,
                 &transport,
@@ -89,6 +91,10 @@ impl NoiseSocket {
                 job.out_buf,
             )
             .await;
+            log::debug!(
+                "noise: send job done ({plaintext_len} bytes, ok={})",
+                result.is_ok()
+            );
 
             // Send result back to caller. Ignore error if receiver was dropped.
             let _ = job.response_tx.send(result);
@@ -127,6 +133,7 @@ impl NoiseSocket {
             let plaintext_arc = Arc::new(plaintext_buf);
             let plaintext_arc_for_task = plaintext_arc.clone();
 
+            log::debug!("noise: offloading encrypt to blocking lane");
             let encrypt_result = wacore::runtime::blocking(&**runtime, move || {
                 write_key.encrypt_with_counter(counter, &plaintext_arc_for_task[..])
             })
@@ -149,9 +156,11 @@ impl NoiseSocket {
             }
         }
 
+        log::debug!("noise: encrypt done, handing frame to transport");
         if let Err(e) = transport.send(out_buf).await {
             return Err(EncryptSendError::transport(e));
         }
+        log::debug!("noise: frame accepted by transport");
 
         // Only advance the counter after the encrypted frame was successfully sent.
         // If transport.send() fails, we can retry with the same counter value.
@@ -162,6 +171,7 @@ impl NoiseSocket {
 
     pub async fn encrypt_and_send(&self, plaintext_buf: Vec<u8>, out_buf: Vec<u8>) -> SendResult {
         let (response_tx, response_rx) = oneshot::channel();
+        log::debug!("noise: enqueueing send job ({} bytes)", plaintext_buf.len());
 
         let job = SendJob {
             plaintext_buf,
