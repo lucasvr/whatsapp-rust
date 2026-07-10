@@ -19,8 +19,13 @@ use wacore_binary::jid::Jid;
 
 pub use wacore::prekeys::PreKeyUtils;
 
-/// Matches WA Web's UPLOAD_KEYS_COUNT from WAWebSignalStoreApi.
-const WANTED_PRE_KEY_COUNT: usize = 812;
+/// WA Web's UPLOAD_KEYS_COUNT is 812, but generating and persisting that many
+/// keys runs inline on the connection's executor and stalls all socket
+/// traffic, keepalives included, for tens of seconds on embedded targets —
+/// long enough for the server to close the connection before the upload IQ is
+/// sent. A batch of 30 completes in seconds; the count guard refills the pool
+/// on later connects whenever it drops below MIN_PRE_KEY_COUNT.
+const WANTED_PRE_KEY_COUNT: usize = 30;
 const MIN_PRE_KEY_COUNT: usize = 5;
 
 impl Client {
